@@ -1,0 +1,83 @@
+name: Android APK
+
+on:
+  push:
+    branches: ["main", "master", "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GODOT_VERSION: 4.6.3
+      GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/build/debug.keystore
+      GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+      GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Install Android tools
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Install pinned Godot and export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o /tmp/godot.zip "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl --fail --location --retry 3 -o /tmp/templates.tpz "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q /tmp/godot.zip -d /tmp/godot-bin
+          sudo install /tmp/godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          cp /tmp/godot-templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+      - name: Import and test complete chess rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          godot --headless --editor --path . --import --quit 2>&1 | tee build/import.log
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" build/import.log; then exit 1; fi
+          godot --headless --path . --script res://tests/test_chess.gd 2>&1 | tee build/tests.log
+          godot --headless --path . --script res://tests/test_game.gd 2>&1 | tee build/game-tests.log
+      - name: Configure Android SDK and development signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -keystore "$GODOT_ANDROID_KEYSTORE_DEBUG_PATH" -storepass android -alias androiddebugkey -keypass android -dname "CN=Azeroth Chess Development,O=Azeroth Chess,C=AR" -keyalg RSA -keysize 2048 -validity 10000
+          python3 tools/configure_android.py
+      - name: Export installable APK and verify signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --export-debug Android build/Azeroth-Chess-3D.apk 2>&1 | tee build/export.log
+          test -s build/Azeroth-Chess-3D.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose build/Azeroth-Chess-3D.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging build/Azeroth-Chess-3D.apk | tee build/apk-info.txt
+          grep "package: name='com.azerothchess.game'" build/apk-info.txt
+          sha256sum build/Azeroth-Chess-3D.apk > build/SHA256SUMS.txt
+      - name: Downloadable Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Azeroth-Chess-3D-Android
+          path: |
+            build/Azeroth-Chess-3D.apk
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: |
+            build/*.log
+            build/apk-info.txt
+          retention-days: 14
