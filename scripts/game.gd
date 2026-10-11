@@ -18,6 +18,7 @@ var human = 1
 var elo = 800
 var busy = false
 var generation = 0
+var movement_tween: Tween
 var ai_thread: Thread
 var ai_generation = -1
 var camera: Camera3D
@@ -79,21 +80,21 @@ func create_world() -> void:
 	env.background_color = Color("#0c1724")
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("#8cacc9")
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.32
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment.environment = env
 	add_child(environment)
 	var sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52,-28,0)
-	sun.light_color = Color("#ffe3ad")
-	sun.light_energy = 1.35
+	sun.light_color = Color("#f2ece2")
+	sun.light_energy = 0.75
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 24
 	add_child(sun)
 	var fill = DirectionalLight3D.new()
 	fill.rotation_degrees = Vector3(-35,150,0)
-	fill.light_color = Color("#67b5ef")
-	fill.light_energy = 0.45
+	fill.light_color = Color("#a3b0bb")
+	fill.light_energy = 0.18
 	add_child(fill)
 	var floor_mesh = models.box(self,Vector3(0,-0.54,0),Vector3(200,0.15,200),Color("#17212a"))
 	floor_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -101,7 +102,7 @@ func create_world() -> void:
 	models.box(self,Vector3(0,-0.06,0),Vector3(8.35,0.10,8.35),models.gold)
 	for rank in range(8):
 		for file in range(8):
-			var color = Color("#b1b2a0") if (rank+file)%2 else Color("#344b60")
+			var color = Color("#85847b") if (rank+file)%2 else Color("#35414b")
 			models.box(self,Vector3(file-3.5,0.01,3.5-rank),Vector3(0.98,0.10,0.98),color)
 	for i in range(8):
 		label_3d(String.chr(65+i),Vector3(i-3.5,0.01,4.23))
@@ -115,7 +116,7 @@ func create_world() -> void:
 			var light = OmniLight3D.new()
 			light.position = Vector3(x,0.9,z)
 			light.light_color = orb_color
-			light.light_energy = 1.1
+			light.light_energy = 0.20
 			light.omni_range = 3.8
 			add_child(light)
 	camera = Camera3D.new()
@@ -159,7 +160,7 @@ func update_camera() -> void:
 		var fits = true
 		for x in [-4.5,4.5]:
 			for z in [-4.5,4.5]:
-				for y in [0.0,1.5]:
+				for y in [0.0,1.8]:
 					if not allowed.has_point(camera.unproject_position(Vector3(x,y,z))):
 						fits = false
 		if fits:
@@ -318,6 +319,7 @@ func create_new_dialog() -> void:
 
 func start_new_game() -> void:
 	generation += 1
+	cancel_movement()
 	chess.reset()
 	history.clear()
 	last_move.clear()
@@ -354,7 +356,7 @@ func show_help() -> void:
 		"Captura al paso disponible en el turno siguiente al avance doble.\n"+
 		"Deshacer vuelve a tu turno anterior. La partida se guarda sola.\n\n"+
 		"Los ELO son niveles nominales, sin calibración competitiva.\n"+
-		"Esculturas originales low poly inspiradas en fantasía Warcraft.")
+		"Miniaturas 3D originales modeladas en Blender.")
 	ui.add_child(dialog)
 	dialog.theme = ui.theme
 	dialog.popup_centered()
@@ -437,6 +439,18 @@ func offer_promotion(candidates: Array) -> void:
 			animate_move(choice)))
 	promotion_dialog.popup_centered(Vector2i(mini(560,int(get_viewport().get_visible_rect().size.x)-24),190))
 
+func cancel_movement() -> void:
+	if movement_tween and movement_tween.is_running():
+		var old = movement_tween
+		movement_tween = null
+		old.kill()
+		old.finished.emit()
+	movement_tween = null
+
+func new_movement_tween() -> Tween:
+	movement_tween = create_tween()
+	return movement_tween
+
 func animate_move(m: Dictionary) -> void:
 	busy = true
 	selected = -1
@@ -456,20 +470,63 @@ func animate_move(m: Dictionary) -> void:
 	chess.play(m)
 	last_move = m.duplicate()
 	save_game()
-	play_sound(capture_sound if captured else move_sound)
-	if effects_enabled:
-		magic_effect(square_position(b),models.ice if piece > 0 else models.violet)
-	var tween = create_tween().set_parallel(true)
-	if pieces.has(a):
-		tween.tween_property(pieces[a],"position",square_position(b),0.34).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	if captured and pieces.has(capture_square):
-		tween.tween_property(pieces[capture_square],"scale",Vector3.ZERO,0.25)
-	if absi(piece) == 6 and absi(b-a) == 2:
-		var rook_from = a+3 if b>a else a-4
-		var rook_to = a+1 if b>a else a-1
-		if pieces.has(rook_from):
-			tween.tween_property(pieces[rook_from],"position",square_position(rook_to),0.34)
-	await tween.finished
+	var actor: Node3D = pieces.get(a)
+	var player: AnimationPlayer = models.animation_player(actor) if actor else null
+	var destination = square_position(b)
+	var is_pawn = absi(piece) == 1
+	if is_pawn and actor:
+		var direction = actor.position.direction_to(destination)
+		actor.get_node("Sculpture").rotation.y = atan2(-direction.x,-direction.z)
+		if player and player.has_animation("walk"):
+			player.play("walk")
+		var approach = destination-direction*0.38 if captured else destination
+		var duration = clampf(actor.position.distance_to(approach)*0.28,0.42,1.10)
+		var walk_tween = new_movement_tween()
+		walk_tween.tween_property(actor,"position",approach,duration).set_trans(Tween.TRANS_LINEAR)
+		await walk_tween.finished
+		if token != generation or not is_instance_valid(actor):
+			return
+		if player:
+			player.play("idle")
+		if captured:
+			var victim: Node3D = pieces.get(capture_square)
+			if victim:
+				var strike_direction = actor.position.direction_to(victim.position)
+				actor.get_node("Sculpture").rotation.y = atan2(-strike_direction.x,-strike_direction.z)
+			if player and player.has_animation("attack"):
+				player.play("attack")
+			var strike = new_movement_tween()
+			strike.tween_interval(0.28)
+			strike.tween_callback(func():
+				if token == generation:
+					play_sound(capture_sound)
+					if effects_enabled:
+						magic_effect(square_position(capture_square),models.gold))
+			if victim:
+				strike.tween_property(victim,"scale",Vector3.ZERO,0.22)
+			else:
+				strike.tween_interval(0.22)
+			await strike.finished
+			if token != generation or not is_instance_valid(actor):
+				return
+			var settle = new_movement_tween()
+			settle.tween_property(actor,"position",destination,0.16)
+			await settle.finished
+		else:
+			play_sound(move_sound)
+	else:
+		play_sound(capture_sound if captured else move_sound)
+		var tween = new_movement_tween().set_parallel(true)
+		if actor:
+			tween.tween_property(actor,"position",destination,0.40).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+		if captured and pieces.has(capture_square):
+			tween.tween_property(pieces[capture_square],"scale",Vector3.ZERO,0.30)
+		if absi(piece) == 6 and absi(b-a) == 2:
+			var rook_from = a+3 if b>a else a-4
+			var rook_to = a+1 if b>a else a-1
+			if pieces.has(rook_from):
+				tween.tween_property(pieces[rook_from],"position",square_position(rook_to),0.40)
+		await tween.finished
 	if token != generation:
 		return
 	rebuild_pieces()
@@ -724,5 +781,7 @@ func _notification(what: int) -> void:
 			new_dialog.popup_centered(Vector2i(520,340))
 
 func _exit_tree() -> void:
+	generation += 1
+	cancel_movement()
 	if ai_thread != null:
 		ai_thread.wait_to_finish()

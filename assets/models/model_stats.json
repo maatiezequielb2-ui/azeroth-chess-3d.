@@ -1,0 +1,62 @@
+{
+  "footman": {
+    "vertices": 7973,
+    "triangles": 14944,
+    "rigged": true
+  },
+  "grunt": {
+    "vertices": 10558,
+    "triangles": 20376,
+    "rigged": true
+  },
+  "arthas": {
+    "vertices": 11400,
+    "triangles": 21792,
+    "rigged": true
+  },
+  "thrall": {
+    "vertices": 10072,
+    "triangles": 19456,
+    "rigged": true
+  },
+  "jaina": {
+    "vertices": 8404,
+    "triangles": 16080,
+    "rigged": true
+  },
+  "sylvanas": {
+    "vertices": 7878,
+    "triangles": 15080,
+    "rigged": true
+  },
+  "hippogryph": {
+    "vertices": 3134,
+    "triangles": 5928,
+    "rigged": false
+  },
+  "gargoyle": {
+    "vertices": 2388,
+    "triangles": 4540,
+    "rigged": false
+  },
+  "frostmourne": {
+    "vertices": 2519,
+    "triangles": 4762,
+    "rigged": false
+  },
+  "warglaives": {
+    "vertices": 2000,
+    "triangles": 3900,
+    "rigged": false
+  },
+  "human_tower": {
+    "vertices": 5074,
+    "triangles": 9784,
+    "rigged": false
+  },
+  "orc_tower": {
+    "vertices": 2266,
+    "triangles": 4320,
+    "rigged": false
+  }
+}

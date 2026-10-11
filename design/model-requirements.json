@@ -1,0 +1,28 @@
+{
+  "status": "local_authored_prototype_below_approved_fidelity",
+  "reference": "design/approved-piece-designs.png",
+  "models_ready": true,
+  "rejected_procedural_models_must_not_ship": true,
+  "pieces": {
+    "1": "footman",
+    "-1": "grunt",
+    "2": "hippogryph",
+    "-2": "gargoyle",
+    "3": "frostmourne",
+    "-3": "warglaives",
+    "4": "human_tower",
+    "-4": "orc_tower",
+    "5": "jaina",
+    "-5": "sylvanas",
+    "6": "arthas",
+    "-6": "thrall"
+  },
+  "required_format": "GLB with embedded textures",
+  "pawn_animations": [
+    "idle",
+    "walk",
+    "attack"
+  ],
+  "visual_requirement": "Match approved reference; previous procedural meshes explicitly rejected by user",
+  "visual_fidelity_approved": false
+}

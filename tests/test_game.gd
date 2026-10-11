@@ -31,6 +31,19 @@ func run() -> void:
 	expect(game.elo_choice.item_count==20,"all twenty difficulty choices")
 	expect(game.notation(0)=="a1" and game.notation(63)=="h8","square notation")
 	expect(game.models.templates.size()==12,"twelve cached faction models")
+	for square in [12,52]:
+		var figure = game.pieces[square]
+		var player = game.models.animation_player(figure)
+		expect(player != null and player.has_animation("walk") and player.has_animation("attack"),"authored pawn has skeletal walk and attack clips")
+		var skeletons = figure.find_children("*","Skeleton3D",true,false)
+		expect(skeletons.size()==1 and skeletons[0].get_bone_count()==7,"pawn mesh has a real seven-bone skeleton")
+		if player and skeletons.size()==1:
+			var leg = skeletons[0].find_bone("LeftLeg")
+			player.play("walk")
+			player.advance(0.12)
+			expect(skeletons[0].get_bone_pose_rotation(leg).angle_to(Quaternion.IDENTITY)>0.10,"walk clip actually rotates the skinned leg")
+			player.play("idle")
+			player.advance(0.01)
 	var model_count = count_meshes(game)
 	expect(model_count<450,"batched scene stays below 450 mesh instances: "+str(model_count))
 	# Rotate the viewport and check UI bounds and projected board corners.
@@ -51,7 +64,7 @@ func run() -> void:
 			var board_fits = true
 			for x in [-4.5,4.5]:
 				for z in [-4.5,4.5]:
-					for y in [0.0,1.5]:
+					for y in [0.0,1.8]:
 						var screen = game.camera.unproject_position(Vector3(x,y,z))
 						board_fits = board_fits and screen.x >= 0 and screen.x <= canvas_size.x and screen.y > game.top_panel.get_global_rect().end.y and screen.y < canvas_size.y-90*game.ui.scale.y
 			expect(board_fits,"board clears controls at "+str(viewport_size)+" yaw "+str(camera_yaw))
@@ -67,6 +80,33 @@ func run() -> void:
 	game.undo_turn()
 	expect(game.chess.board[12]==1 and game.chess.board[28]==0,"undo restores player turn")
 	expect(game.history.is_empty() and game.chess.turn==1,"undo removes complete move pair")
+	# A captured pawn remains visible until the sword's impact frame.
+	game.chess.board.fill(0)
+	game.chess.board[4]=6
+	game.chess.board[60]=-6
+	game.chess.board[27]=1
+	game.chess.board[36]=-1
+	game.chess.turn=1
+	game.chess.rights=0
+	game.chess.ep=-1
+	game.human=-1 # Avoid AI after directly exercising the white capture.
+	game.rebuild_pieces()
+	var attacker = game.pieces[27]
+	var victim = game.pieces[36]
+	var capture_move: Dictionary = {}
+	for move in game.chess.legal_moves():
+		if move["from"]==27 and move["to"]==36:
+			capture_move=move
+	game.animate_move(capture_move)
+	await create_timer(0.20).timeout
+	expect(game.models.animation_player(attacker).current_animation=="walk","capture begins with skeletal walking")
+	expect(victim.scale==Vector3.ONE,"victim stays visible while attacker approaches")
+	await create_timer(0.33).timeout
+	expect(game.models.animation_player(attacker).current_animation=="attack","arrival starts sword attack clip")
+	expect(victim.scale==Vector3.ONE,"victim does not disappear before sword impact")
+	await create_timer(0.75).timeout
+	expect(not game.busy and game.chess.board[36]==1 and not game.pieces.has(27),"capture animation settles and rebuilds the board")
+	game.human=1
 	# Exercise promotion popup and actually choose a knight.
 	game.chess.board.fill(0)
 	game.chess.board[4]=6
@@ -84,6 +124,14 @@ func run() -> void:
 	choices.get_child(3).pressed.emit()
 	await create_timer(0.5).timeout
 	expect(game.chess.board[56]==2,"promotion UI makes a knight")
+	# Restarting during walking cancels animation targeting the old figures.
+	game.start_new_game()
+	game.select_square(12)
+	game.select_square(28)
+	await create_timer(0.10).timeout
+	game.start_new_game()
+	await create_timer(0.70).timeout
+	expect(game.pieces.size()==32 and game.chess.board[12]==1 and game.chess.board[28]==0 and not game.busy,"new match cancels the previous pawn walk")
 	# Starting a new match while an old worker finishes must discard its result.
 	game.faction_choice.select(1)
 	game.elo_choice.select(19)

@@ -74,6 +74,19 @@ jobs:
             build/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+      - name: Downloadable authored models and real renders
+        uses: actions/upload-artifact@v4
+        with:
+          name: Azeroth-Chess-3D-Local-Models
+          path: |
+            assets/models/*.glb
+            assets/models/*-preview.png
+            assets/models/model_stats.json
+            assets/models/README.md
+            design/actual-model-renders.jpg
+            tools/build_models.py
+            tools/sculpt_detail.py
+          retention-days: 30
       - name: Build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
