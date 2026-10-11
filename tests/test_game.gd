@@ -33,6 +33,30 @@ func run() -> void:
 	expect(game.models.templates.size()==12,"twelve cached faction models")
 	var model_count = count_meshes(game)
 	expect(model_count<450,"batched scene stays below 450 mesh instances: "+str(model_count))
+	# Rotate the viewport and check UI bounds and projected board corners.
+	for viewport_size in [Vector2i(540,960),Vector2i(960,540),Vector2i(720,1280),Vector2i(1280,720)]:
+		root.size = viewport_size
+		await process_frame
+		game.resize_ui()
+		await process_frame
+		var canvas_size = game.get_viewport().get_visible_rect().size
+		var portrait = canvas_size.y > canvas_size.x
+		expect(game.toolbar.columns == (3 if portrait else 4),"controls reflow at "+str(viewport_size))
+		for control in game.toolbar.get_children():
+			var bounds = control.get_global_rect()
+			expect(bounds.position.x >= 0 and bounds.end.x <= canvas_size.x+1,"touch control stays on screen: "+control.text)
+		for camera_yaw in [0.0,PI/4,PI]:
+			game.yaw = camera_yaw
+			game.update_camera()
+			var board_fits = true
+			for x in [-4.5,4.5]:
+				for z in [-4.5,4.5]:
+					for y in [0.0,1.5]:
+						var screen = game.camera.unproject_position(Vector3(x,y,z))
+						board_fits = board_fits and screen.x >= 0 and screen.x <= canvas_size.x and screen.y > game.top_panel.get_global_rect().end.y and screen.y < canvas_size.y-90*game.ui.scale.y
+			expect(board_fits,"board clears controls at "+str(viewport_size)+" yaw "+str(camera_yaw))
+	game.yaw = 0
+	game.update_camera()
 	game.select_square(12)
 	expect(game.selected==12 and game.highlights.size()==3,"touch selection highlights pawn and legal destinations")
 	game.select_square(28)
