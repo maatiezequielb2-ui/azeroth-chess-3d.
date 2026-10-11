@@ -4,7 +4,7 @@ const Rules = preload("res://scripts/chess.gd")
 const AI = preload("res://scripts/ai.gd")
 const Models = preload("res://scripts/pieces.gd")
 const NAMES = {
-	1:["Soldado humano","Soldado orco"], 2:["Hipogrifo","Gárgola"],
+	1:["Soldado raso (Footman)","Grunt orco"], 2:["Hipogrifo","Gárgola"],
 	3:["Frostmourne","Gujas de Illidan"], 4:["Torre humana","Torre orca"],
 	5:["Jaina","Sylvanas"], 6:["Arthas","Thrall"]}
 var chess = Rules.new()
@@ -31,6 +31,10 @@ var dragged = false
 var contacts: Dictionary = {}
 var pinch_distance = 0.0
 var last_touch_time = -1000
+var top_panel: PanelContainer
+var heading: BoxContainer
+var title_label: Label
+var toolbar: GridContainer
 var ui: Control
 var status: Label
 var detail: Label
@@ -135,7 +139,34 @@ func label_3d(text: String, pos: Vector3) -> void:
 	add_child(label)
 
 func update_camera() -> void:
-	camera.position = Vector3(sin(yaw)*cos(elevation),sin(elevation),cos(yaw)*cos(elevation))*distance
+	if not is_instance_valid(camera):
+		return
+	var viewport_size = get_viewport().get_visible_rect().size
+	if viewport_size.x <= 0 or viewport_size.y <= 0:
+		return
+	var portrait = viewport_size.y > viewport_size.x
+	var factor = minf(1.0,viewport_size.x/(540.0 if portrait else 1180.0))
+	# Keep the full board and tall figures outside both overlay panels.
+	var inset = (330.0 if portrait else 240.0)*factor
+	var bottom_inset = 110.0*factor
+	var allowed = Rect2(Vector2(20*factor,inset),Vector2(viewport_size.x-40*factor,maxf(100,viewport_size.y-inset-bottom_inset)))
+	var direction = Vector3(sin(yaw)*cos(elevation),sin(elevation),cos(yaw)*cos(elevation))
+	var fitted_distance = 9.0
+	for attempt in range(80):
+		camera.v_offset = fitted_distance*tan(deg_to_rad(camera.fov)*0.5)*(inset-bottom_inset)/viewport_size.y
+		camera.position = direction*fitted_distance
+		camera.look_at(Vector3(0,0.1,0),Vector3.UP)
+		var fits = true
+		for x in [-4.5,4.5]:
+			for z in [-4.5,4.5]:
+				for y in [0.0,1.5]:
+					if not allowed.has_point(camera.unproject_position(Vector3(x,y,z))):
+						fits = false
+		if fits:
+			break
+		fitted_distance *= 1.035
+	camera.v_offset *= distance/12.7
+	camera.position = direction*fitted_distance*(distance/12.7)
 	camera.look_at(Vector3(0,0.1,0),Vector3.UP)
 
 func style(bg: Color, border: Color = Color("#8b7448")) -> StyleBoxFlat:
@@ -160,7 +191,7 @@ func text_label(text: String, size: int, color: Color = Color("#ede2c8")) -> Lab
 func button(text: String, action: Callable) -> Button:
 	var b = Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(0,46)
+	b.custom_minimum_size = Vector2(0,64)
 	b.pressed.connect(action)
 	return b
 
@@ -184,6 +215,7 @@ func create_ui() -> void:
 	theme.set_stylebox("panel","Window",style(Color("#122438")))
 	ui.theme = theme
 	var top = PanelContainer.new()
+	top_panel = top
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	top.offset_left = 18
 	top.offset_top = 16
@@ -193,14 +225,16 @@ func create_ui() -> void:
 	var rows = VBoxContainer.new()
 	rows.add_theme_constant_override("separation",7)
 	top.add_child(rows)
-	var heading = HBoxContainer.new()
+	heading = BoxContainer.new()
 	rows.add_child(heading)
-	var title = text_label("AZEROTH  /  CHESS 3D",28,models.gold)
+	var title = text_label("AZEROTH / CHESS 3D",24,models.gold)
+	title_label = title
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_child(title)
 	turn_label = text_label("ALIANZA",20,models.ice)
 	heading.add_child(turn_label)
-	var toolbar = HBoxContainer.new()
+	toolbar = GridContainer.new()
+	toolbar.columns = 8
 	toolbar.add_theme_constant_override("separation",10)
 	rows.add_child(toolbar)
 	toolbar.add_child(button("Nueva partida",func(): new_dialog.popup_centered(Vector2i(520,340))))
@@ -208,10 +242,7 @@ func create_ui() -> void:
 	toolbar.add_child(button("Girar",func(): yaw += PI; update_camera()))
 	toolbar.add_child(button("−",func(): distance = minf(19,distance+1); update_camera()))
 	toolbar.add_child(button("+",func(): distance = maxf(9,distance-1); update_camera()))
-	var spacer = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	toolbar.add_child(spacer)
-	toolbar.add_child(button("Figuras / Ayuda",show_help))
+	toolbar.add_child(button("Ayuda",show_help))
 	sound_toggle = button("Sonido: sí",func(): pass)
 	sound_toggle.pressed.connect(func(): sound_enabled = not sound_enabled; sound_toggle.text = "Sonido: sí" if sound_enabled else "Sonido: no"; save_game())
 	toolbar.add_child(sound_toggle)
@@ -231,6 +262,8 @@ func create_ui() -> void:
 	bottom_rows.add_child(status)
 	detail = text_label("Tocá para jugar · arrastrá para girar · pellizcá para acercar",16,Color("#9cafbf"))
 	bottom_rows.add_child(detail)
+	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	create_new_dialog()
 	promotion_dialog = AcceptDialog.new()
 	promotion_dialog.title = "Coronación"
@@ -244,10 +277,17 @@ func create_ui() -> void:
 	resize_ui()
 
 func resize_ui() -> void:
-	var width = get_viewport().get_visible_rect().size.x
-	var factor = minf(1.0,width/1180.0)
+	var viewport_size = get_viewport().get_visible_rect().size
+	var portrait = viewport_size.y > viewport_size.x
+	var factor = minf(1.0,viewport_size.x/(540.0 if portrait else 1180.0))
 	ui.scale = Vector2(factor,factor)
-	ui.size = get_viewport().get_visible_rect().size / factor
+	ui.size = viewport_size / factor
+	heading.vertical = portrait
+	toolbar.columns = 3 if portrait else 4
+	for control in toolbar.get_children():
+		control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_panel.offset_bottom = 310 if portrait else 220
+	update_camera()
 
 func create_new_dialog() -> void:
 	new_dialog = ConfirmationDialog.new()
@@ -303,7 +343,7 @@ func show_help() -> void:
 		"ALIANZA                      HORDA\n"+
 		"Rey: Arthas                   Rey: Thrall\n"+
 		"Dama: Jaina                  Dama: Sylvanas\n"+
-		"Peón: soldado humano    Peón: soldado orco\n"+
+		"Peón: Footman humano    Peón: Grunt orco\n"+
 		"Caballo: hipogrifo          Caballo: gárgola\n"+
 		"Alfil: Frostmourne         Alfil: gujas de Illidan\n"+
 		"Torre: fortaleza humana   Torre: fortaleza orca\n\n"+
@@ -395,7 +435,7 @@ func offer_promotion(candidates: Array) -> void:
 			promotion_pending.clear()
 			promotion_dialog.hide()
 			animate_move(choice)))
-	promotion_dialog.popup_centered(Vector2i(560,190))
+	promotion_dialog.popup_centered(Vector2i(mini(560,int(get_viewport().get_visible_rect().size.x)-24),190))
 
 func animate_move(m: Dictionary) -> void:
 	busy = true
