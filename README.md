@@ -15,7 +15,7 @@ compila y verifica un APK firmado de desarrollo.
 3. Abrir **Azeroth-Chess-3D.apk** en el dispositivo y permitir la instalación
    desde esa aplicación cuando Android lo solicite.
 
-Requiere Android 8.0 o posterior y OpenGL ES 3.0. Incluye ARM64 y ARMv7;
+Requiere Android 7.0 o posterior y OpenGL ES 3.0. Incluye ARM64 y ARMv7;
 la firma y la integridad del paquete se comprueban con apksigner y SHA256.
 El APK de desarrollo usa una clave generada en cada ejecución: para instalar
 una compilación de otra ejecución puede hacer falta desinstalar la anterior
